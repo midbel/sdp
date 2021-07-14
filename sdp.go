@@ -45,7 +45,7 @@ type ConnInfo struct {
 	NetType  string
 	AddrType string
 	Addr     string
-  TTL      int64
+	TTL      int64
 }
 
 type Session struct {
@@ -86,6 +86,17 @@ type MediaInfo struct {
 	Attributes []Attribute
 }
 
+func (m MediaInfo) PortRange() []uint16 {
+	if m.Count == 0 {
+		return []uint16{m.Port}
+	}
+	var arr []uint16
+	for i := 0; i < m.Count; i++ {
+		arr = append(arr, m.Port+i)
+	}
+	return arr
+}
+
 type File struct {
 	Version int
 	Session
@@ -100,6 +111,14 @@ type File struct {
 	Intervals []Interval
 
 	Medias []MediaInfo
+}
+
+func (f File) Types() []string {
+	var arr []string
+	for i := range f.Medias {
+		arr = append(arr, f.Medias[i])
+	}
+	return arr
 }
 
 func Parse(r io.Reader) (File, error) {
@@ -168,7 +187,7 @@ func parseMediaDescription(line string, rs *bufio.Reader) (MediaInfo, error) {
 	var (
 		mi    MediaInfo
 		err   error
-		parts = strings.Split(line, " ")
+		parts = split(line)
 	)
 	if len(parts) < 4 {
 		return mi, ErrSyntax
@@ -218,7 +237,7 @@ func parseInterval(file *File, rs *bufio.Reader, prefix string) error {
 		if err != nil {
 			return err
 		}
-		parts := strings.Split(line, " ")
+		parts := split(line)
 		if len(parts) != 2 {
 			return ErrSyntax
 		}
@@ -263,7 +282,7 @@ func parseConnInfo(file *File, rs *bufio.Reader, prefix string) error {
 	if err != nil || line == "" {
 		return err
 	}
-	file.ConnInfo, err = parseConnectionInfo(strings.Split(line, " "))
+	file.ConnInfo, err = parseConnectionInfo(split(line))
 	return err
 }
 
@@ -272,7 +291,7 @@ func parseMediaConnInfo(media *MediaInfo, rs *bufio.Reader, prefix string) error
 	if err != nil || line == "" {
 		return err
 	}
-	media.ConnInfo, err = parseConnectionInfo(strings.Split(line, " "))
+	media.ConnInfo, err = parseConnectionInfo(split(line))
 	return err
 }
 
@@ -321,7 +340,7 @@ func parseOrigin(file *File, rs *bufio.Reader, prefix string) error {
 	if err != nil {
 		return err
 	}
-	parts := strings.Split(line, " ")
+	parts := split(line)
 	if len(parts) != 6 {
 		return ErrSyntax
 	}
@@ -352,12 +371,12 @@ func parseConnectionInfo(parts []string) (ConnInfo, error) {
 	ci.NetType = parts[0]
 	ci.AddrType = parts[1]
 	ci.Addr = parts[2]
-  if x := strings.Index(ci.Addr, "/"); x > 0 {
-    var err error
-    if ci.TTL, err = strconv.ParseInt(ci.Addr[x+1:], 10, 16); err != nil {
-      return ci, err
-    }
-  }
+	if x := strings.Index(ci.Addr, "/"); x > 0 {
+		var err error
+		if ci.TTL, err = strconv.ParseInt(ci.Addr[x+1:], 10, 16); err != nil {
+			return ci, err
+		}
+	}
 	return ci, nil
 }
 
@@ -367,6 +386,9 @@ func parseVersion(file *File, rs *bufio.Reader, prefix string) error {
 		return err
 	}
 	file.Version, err = strconv.Atoi(line)
+	if file.Version != 0 {
+		return fmt.Errorf("%w: unsupported version", ErrInvalid)
+	}
 	return err
 }
 
@@ -425,6 +447,10 @@ func parseBandwidthLines(rs *bufio.Reader, prefix string) ([]Bandwidth, error) {
 		arr = append(arr, bwd)
 	}
 	return arr, nil
+}
+
+func split(line string) []string {
+	return strings.Split(line, " ")
 }
 
 func setString(rs *bufio.Reader, prefix string, required bool) (string, error) {
