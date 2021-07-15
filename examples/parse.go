@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/midbel/sdp"
@@ -17,10 +18,19 @@ func main() {
 	}
 	defer r.Close()
 
-	f, err := sdp.Parse(r)
+	f, err := sdp.Parse(io.TeeReader(r, os.Stdout))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "parse:", err)
 		os.Exit(2)
 	}
-	fmt.Printf("%+v\n", f)
+	// fmt.Printf("%+v\n", f)
+	fmt.Println("---")
+	fmt.Println("medias:")
+	for _, m := range f.Medias {
+		addr := m.ConnInfo.Addr
+		if addr == "" {
+			addr = f.ConnInfo.Addr
+		}
+		fmt.Printf("- %s: %s", m.Media, addr)
+	}
 }

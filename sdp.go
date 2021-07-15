@@ -91,8 +91,8 @@ func (m MediaInfo) PortRange() []uint16 {
 		return []uint16{m.Port}
 	}
 	var arr []uint16
-	for i := 0; i < m.Count; i++ {
-		arr = append(arr, m.Port+i)
+	for i := 0; i < int(m.Count); i++ {
+		arr = append(arr, m.Port+uint16(i))
 	}
 	return arr
 }
@@ -116,7 +116,7 @@ type File struct {
 func (f File) Types() []string {
 	var arr []string
 	for i := range f.Medias {
-		arr = append(arr, f.Medias[i])
+		arr = append(arr, f.Medias[i].Media)
 	}
 	return arr
 }
@@ -129,6 +129,9 @@ func Parse(r io.Reader) (File, error) {
 	for i := range parsers {
 		p := parsers[i]
 		if err := p.parse(&file, rs, p.prefix); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			return file, err
 		}
 	}
@@ -148,8 +151,8 @@ var parsers = []struct {
 	{prefix: "p", parse: parsePhone},
 	{prefix: "c", parse: parseConnInfo},
 	{prefix: "b", parse: parseBandwidth},
-	{prefix: "a", parse: parseAttributes},
 	{prefix: "t", parse: parseInterval},
+	{prefix: "a", parse: parseAttributes},
 	{prefix: "r", parse: skip},
 	{prefix: "z", parse: skip},
 	{prefix: "m", parse: parseMedia},
@@ -376,6 +379,7 @@ func parseConnectionInfo(parts []string) (ConnInfo, error) {
 		if ci.TTL, err = strconv.ParseInt(ci.Addr[x+1:], 10, 16); err != nil {
 			return ci, err
 		}
+		ci.Addr = ci.Addr[:x]
 	}
 	return ci, nil
 }
@@ -482,7 +486,7 @@ func hasPrefix(rs *bufio.Reader, prefix string) bool {
 
 func checkLine(rs *bufio.Reader, prefix string) (string, error) {
 	line, err := rs.ReadString('\n')
-	if err != nil {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
 	line = strings.TrimRight(line, "\r\n")
