@@ -1,8 +1,8 @@
 package sdp
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -516,7 +516,8 @@ func parseAttributeLines(rs *bufio.Reader, prefix string) ([]Attribute, error) {
 		}
 		x := strings.Index(line, ":")
 		if x < 0 {
-			x = len(line)
+			atb.Name = line
+			continue
 		}
 		atb.Name = line[:x]
 		atb.Value = line[x+1:]
@@ -622,7 +623,7 @@ func writeIntervals(buf *bytes.Buffer, is []Interval) {
 		if t.IsZero() {
 			return "0"
 		}
-		return strconv.FormatInt(t.Unix() + epoch, 10)
+		return strconv.FormatInt(t.Unix()+epoch, 10)
 	}
 	for i := range is {
 		writePrefix(buf, 't')
