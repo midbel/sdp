@@ -19,6 +19,9 @@ const (
 	NetTypeIN = "IN"
 	AddrType4 = "IP4"
 	AddrType6 = "IP6"
+
+	ModeIncl = "incl"
+	ModeExcl = "excl"
 )
 
 const (
@@ -39,6 +42,15 @@ type Bandwidth struct {
 type Attribute struct {
 	Name  string
 	Value string
+}
+
+func findAttributes(name string, attrs []Attribute) (Attribute, bool) {
+	for i := range attrs {
+		if attrs[i].Name == name {
+			return attrs[i], true
+		}
+	}
+	return Attribute{}, false
 }
 
 type ConnInfo struct {
@@ -72,6 +84,44 @@ func (i Interval) IsPermanent() bool {
 	return i.Starts.IsZero() && i.Ends.IsZero()
 }
 
+type SourceInfo struct {
+	Mode     string
+	NetType  string
+	AddrType string
+	Addr     string
+	List     []string
+}
+
+func (s SourceInfo) Include() bool {
+	return s.Mode == ModeIncl
+}
+
+func parseSourceInfo(line string) (SourceInfo, error) {
+	var (
+		parts = split(line)
+		size  = len(line)
+		info  SourceInfo
+	)
+	if size < 5 {
+		return info, ErrSyntax
+	}
+	if err := validModeType(parts[0]); err != nil {
+		return info, err
+	}
+	if err := validNetType(parts[1]); err != nil {
+		return info, err
+	}
+	if err := validAddrType(parts[2], true); err != nil {
+		return info, err
+	}
+	info.Mode = parts[0]
+	info.NetType = parts[1]
+	info.AddrType = parts[2]
+	info.Addr = parts[3]
+	info.List = append(info.List, parts[4:]...)
+	return info, nil
+}
+
 type MediaInfo struct {
 	Media string
 	Port  uint16
@@ -97,6 +147,14 @@ func (m MediaInfo) PortRange() []uint16 {
 	return arr
 }
 
+func (m MediaInfo) SourceFilter() (SourceInfo, error) {
+	a, ok := findAttributes("source-filter", m.Attributes)
+	if !ok {
+		return SourceInfo{}, fmt.Errorf("source-filter not set")
+	}
+	return parseSourceInfo(a.Value)
+}
+
 type File struct {
 	Version int
 	Session
@@ -119,6 +177,14 @@ func (f File) Types() []string {
 		arr = append(arr, f.Medias[i].Media)
 	}
 	return arr
+}
+
+func (f File) SourceFilter() (SourceInfo, error) {
+	a, ok := findAttributes("source-filter", f.Attributes)
+	if !ok {
+		return SourceInfo{}, fmt.Errorf("source-filter not set")
+	}
+	return parseSourceInfo(a.Value)
 }
 
 func Parse(r io.Reader) (File, error) {
@@ -365,11 +431,11 @@ func parseConnectionInfo(parts []string) (ConnInfo, error) {
 	if len(parts) != 3 {
 		return ci, fmt.Errorf("%w: not enough elemnt in line %s", ErrSyntax, parts)
 	}
-	if parts[0] != NetTypeIN {
-		return ci, fmt.Errorf("%w - net type: unknown value %s", parts[0])
+	if err := validNetType(parts[0]); err != nil {
+		return ci, err
 	}
-	if parts[1] != AddrType4 && parts[1] != AddrType6 {
-		return ci, fmt.Errorf("%w - addr type: unknown value %s", parts[1])
+	if err := validAddrType(parts[1], false); err != nil {
+		return ci, err
 	}
 	ci.NetType = parts[0]
 	ci.AddrType = parts[1]
@@ -495,4 +561,29 @@ func checkLine(rs *bufio.Reader, prefix string) (string, error) {
 		return "", fmt.Errorf("%w: missing prefix %s", ErrSyntax, prefix)
 	}
 	return line[len(prefix):], nil
+}
+
+func validAddrType(str string, star bool) error {
+	switch str {
+	case AddrType4, AddrType6:
+	default:
+		if !star && str != "*" {
+			return fmt.Errorf("%w: unknown addr type %s", ErrInvalid, str)
+		}
+	}
+	return nil
+}
+
+func validNetType(str string) error {
+	if str == NetTypeIN {
+		return nil
+	}
+	return fmt.Errorf("%w: unknown net type %s", ErrInvalid, str)
+}
+
+func validModeType(str string) error {
+	if str == ModeIncl || str == ModeExcl {
+		return nil
+	}
+	return fmt.Errorf("%w: unknown mode type %s", ErrInvalid, str)
 }
