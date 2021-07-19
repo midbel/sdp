@@ -32,5 +32,6 @@ func main() {
 			addr = f.ConnInfo.Addr
 		}
 		fmt.Printf("- %s: %s", m.Media, addr)
+		fmt.Println()
 	}
 }
