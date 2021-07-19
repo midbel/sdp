@@ -1,6 +1,7 @@
 package sdp
 
 import (
+	"bytes"
 	"bufio"
 	"errors"
 	"fmt"
@@ -58,6 +59,10 @@ type ConnInfo struct {
 	AddrType string
 	Addr     string
 	TTL      int64
+}
+
+func (c ConnInfo) IsZero() bool {
+	return c.NetType == "" && c.AddrType == "" && c.Addr == ""
 }
 
 type Session struct {
@@ -171,6 +176,30 @@ type File struct {
 	Medias []MediaInfo
 }
 
+func (f File) Dump() string {
+	var buf bytes.Buffer
+	writePrefix(&buf, 'v')
+	buf.WriteString(strconv.Itoa(f.Version))
+	writeEOL(&buf)
+	writeSession(&buf, f.Session)
+	for i := range f.Email {
+		writePrefix(&buf, 'e')
+		writeLine(&buf, f.Email[i])
+	}
+	for i := range f.Phone {
+		writePrefix(&buf, 'p')
+		writeLine(&buf, f.Phone[i])
+	}
+	writeConnInfo(&buf, f.ConnInfo, true)
+	writeBandwidths(&buf, f.Bandwidth)
+	writeAttributes(&buf, f.Attributes)
+	writeIntervals(&buf, f.Intervals)
+	for i := range f.Medias {
+		writeMediaInfo(&buf, f.Medias[i])
+	}
+	return buf.String()
+}
+
 func (f File) Types() []string {
 	var arr []string
 	for i := range f.Medias {
@@ -280,7 +309,7 @@ func parseMediaDescription(line string, rs *bufio.Reader) (MediaInfo, error) {
 		mi.Port = uint16(n)
 	}
 	mi.Proto = parts[2]
-	mi.Attrs = append(mi.Attrs, parts[2:]...)
+	mi.Attrs = append(mi.Attrs, parts[3:]...)
 	for i := range mediaparsers {
 		p := mediaparsers[i]
 		if err := p.parse(&mi, rs, p.prefix); err != nil {
@@ -490,7 +519,7 @@ func parseAttributeLines(rs *bufio.Reader, prefix string) ([]Attribute, error) {
 			x = len(line)
 		}
 		atb.Name = line[:x]
-		atb.Value = line[x:]
+		atb.Value = line[x+1:]
 		arr = append(arr, atb)
 	}
 	return arr, nil
@@ -586,4 +615,124 @@ func validModeType(str string) error {
 		return nil
 	}
 	return fmt.Errorf("%w: unknown mode type %s", ErrInvalid, str)
+}
+
+func writeIntervals(buf *bytes.Buffer, is []Interval) {
+	convert := func(t time.Time) string {
+		if t.IsZero() {
+			return "0"
+		}
+		return strconv.FormatInt(t.Unix() + epoch, 10)
+	}
+	for i := range is {
+		writePrefix(buf, 't')
+		buf.WriteString(convert(is[i].Starts))
+		buf.WriteByte(' ')
+		buf.WriteString(convert(is[i].Ends))
+		writeEOL(buf)
+	}
+}
+
+func writeSession(buf *bytes.Buffer, sess Session) {
+	writePrefix(buf, 'o')
+	if sess.User == "" {
+		sess.User = "-"
+	}
+	buf.WriteString(sess.User)
+	buf.WriteByte(' ')
+	buf.WriteString(strconv.FormatInt(sess.ID, 10))
+	buf.WriteByte(' ')
+	buf.WriteString(strconv.FormatInt(sess.Ver, 10))
+	buf.WriteByte(' ')
+	writeConnInfo(buf, sess.ConnInfo, false)
+
+	writePrefix(buf, 's')
+	writeLine(buf, sess.Name)
+	if sess.Info != "" {
+		writePrefix(buf, 'i')
+		writeLine(buf, sess.Info)
+	}
+	if sess.URI != "" {
+		writePrefix(buf, 'u')
+		writeLine(buf, sess.URI)
+	}
+}
+
+func writeMediaInfo(buf *bytes.Buffer, m MediaInfo) {
+	writePrefix(buf, 'm')
+	buf.WriteString(m.Media)
+	buf.WriteByte(' ')
+	buf.WriteString(strconv.FormatUint(uint64(m.Port), 10))
+	if m.Count > 0 {
+		buf.WriteByte('/')
+		buf.WriteString(strconv.FormatUint(uint64(m.Count), 10))
+	}
+	buf.WriteByte(' ')
+	buf.WriteString(m.Proto)
+	for i := range m.Attrs {
+		buf.WriteByte(' ')
+		buf.WriteString(m.Attrs[i])
+	}
+	writeEOL(buf)
+	if m.Info != "" {
+		writePrefix(buf, 'i')
+		writeLine(buf, m.Info)
+	}
+	writeConnInfo(buf, m.ConnInfo, true)
+	writeBandwidths(buf, m.Bandwidth)
+	writeAttributes(buf, m.Attributes)
+}
+
+func writeConnInfo(buf *bytes.Buffer, conn ConnInfo, prefix bool) {
+	if conn.IsZero() {
+		return
+	}
+	if prefix {
+		writePrefix(buf, 'c')
+	}
+	buf.WriteString(conn.NetType)
+	buf.WriteByte(' ')
+	buf.WriteString(conn.AddrType)
+	buf.WriteByte(' ')
+	buf.WriteString(conn.Addr)
+	if conn.TTL > 0 {
+		buf.WriteByte('/')
+		buf.WriteString(strconv.FormatInt(conn.TTL, 10))
+	}
+	writeEOL(buf)
+}
+
+func writeBandwidths(buf *bytes.Buffer, bws []Bandwidth) {
+	for i := range bws {
+		writePrefix(buf, 'b')
+		buf.WriteString(bws[i].Type)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.FormatInt(bws[i].Value, 10))
+		writeEOL(buf)
+	}
+}
+
+func writeAttributes(buf *bytes.Buffer, attrs []Attribute) {
+	for i := range attrs {
+		writePrefix(buf, 'a')
+		buf.WriteString(attrs[i].Name)
+		buf.WriteByte(':')
+		buf.WriteString(attrs[i].Value)
+		writeEOL(buf)
+	}
+}
+
+func writePrefix(buf *bytes.Buffer, prefix byte) {
+	buf.WriteByte(prefix)
+	buf.WriteByte('=')
+}
+
+func writeLine(buf *bytes.Buffer, line string) {
+	io.WriteString(buf, line)
+	writeEOL(buf)
+}
+
+func writeEOL(buf *bytes.Buffer) {
+	buf.WriteByte('\r')
+	buf.WriteByte('\n')
 }
