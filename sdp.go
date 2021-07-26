@@ -178,26 +178,33 @@ type File struct {
 
 func (f File) Dump() string {
 	var buf bytes.Buffer
-	writePrefix(&buf, 'v')
-	buf.WriteString(strconv.Itoa(f.Version))
-	writeEOL(&buf)
-	writeSession(&buf, f.Session)
+	f.DumpTo(&buf)
+	return buf.String()
+}
+
+func (f File) DumpTo(w io.Writer) {
+	ws := bufio.NewWriter(w)
+	defer ws.Flush()
+
+	writePrefix(ws, 'v')
+	ws.WriteString(strconv.Itoa(f.Version))
+	writeEOL(ws)
+	writeSession(ws, f.Session)
 	for i := range f.Email {
-		writePrefix(&buf, 'e')
-		writeLine(&buf, f.Email[i])
+		writePrefix(ws, 'e')
+		writeLine(ws, f.Email[i])
 	}
 	for i := range f.Phone {
-		writePrefix(&buf, 'p')
-		writeLine(&buf, f.Phone[i])
+		writePrefix(ws, 'p')
+		writeLine(ws, f.Phone[i])
 	}
-	writeConnInfo(&buf, f.ConnInfo, true)
-	writeBandwidths(&buf, f.Bandwidth)
-	writeAttributes(&buf, f.Attributes)
-	writeIntervals(&buf, f.Intervals)
+	writeConnInfo(ws, f.ConnInfo, true)
+	writeBandwidths(ws, f.Bandwidth)
+	writeAttributes(ws, f.Attributes)
+	writeIntervals(ws, f.Intervals)
 	for i := range f.Medias {
-		writeMediaInfo(&buf, f.Medias[i])
+		writeMediaInfo(ws, f.Medias[i])
 	}
-	return buf.String()
 }
 
 func (f File) Types() []string {
@@ -618,7 +625,7 @@ func validModeType(str string) error {
 	return fmt.Errorf("%w: unknown mode type %s", ErrInvalid, str)
 }
 
-func writeIntervals(buf *bytes.Buffer, is []Interval) {
+func writeIntervals(w *bufio.Writer, is []Interval) {
 	convert := func(t time.Time) string {
 		if t.IsZero() {
 			return "0"
@@ -626,114 +633,114 @@ func writeIntervals(buf *bytes.Buffer, is []Interval) {
 		return strconv.FormatInt(t.Unix()+epoch, 10)
 	}
 	for i := range is {
-		writePrefix(buf, 't')
-		buf.WriteString(convert(is[i].Starts))
-		buf.WriteByte(' ')
-		buf.WriteString(convert(is[i].Ends))
-		writeEOL(buf)
+		writePrefix(w, 't')
+		w.WriteString(convert(is[i].Starts))
+		w.WriteByte(' ')
+		w.WriteString(convert(is[i].Ends))
+		writeEOL(w)
 	}
 }
 
-func writeSession(buf *bytes.Buffer, sess Session) {
-	writePrefix(buf, 'o')
+func writeSession(w *bufio.Writer, sess Session) {
+	writePrefix(w, 'o')
 	if sess.User == "" {
 		sess.User = "-"
 	}
-	buf.WriteString(sess.User)
-	buf.WriteByte(' ')
-	buf.WriteString(strconv.FormatInt(sess.ID, 10))
-	buf.WriteByte(' ')
-	buf.WriteString(strconv.FormatInt(sess.Ver, 10))
-	buf.WriteByte(' ')
-	writeConnInfo(buf, sess.ConnInfo, false)
+	w.WriteString(sess.User)
+	w.WriteByte(' ')
+	w.WriteString(strconv.FormatInt(sess.ID, 10))
+	w.WriteByte(' ')
+	w.WriteString(strconv.FormatInt(sess.Ver, 10))
+	w.WriteByte(' ')
+	writeConnInfo(w, sess.ConnInfo, false)
 
-	writePrefix(buf, 's')
-	writeLine(buf, sess.Name)
+	writePrefix(w, 's')
+	writeLine(w, sess.Name)
 	if sess.Info != "" {
-		writePrefix(buf, 'i')
-		writeLine(buf, sess.Info)
+		writePrefix(w, 'i')
+		writeLine(w, sess.Info)
 	}
 	if sess.URI != "" {
-		writePrefix(buf, 'u')
-		writeLine(buf, sess.URI)
+		writePrefix(w, 'u')
+		writeLine(w, sess.URI)
 	}
 }
 
-func writeMediaInfo(buf *bytes.Buffer, m MediaInfo) {
-	writePrefix(buf, 'm')
-	buf.WriteString(m.Media)
-	buf.WriteByte(' ')
-	buf.WriteString(strconv.FormatUint(uint64(m.Port), 10))
+func writeMediaInfo(w *bufio.Writer, m MediaInfo) {
+	writePrefix(w, 'm')
+	w.WriteString(m.Media)
+	w.WriteByte(' ')
+	w.WriteString(strconv.FormatUint(uint64(m.Port), 10))
 	if m.Count > 0 {
-		buf.WriteByte('/')
-		buf.WriteString(strconv.FormatUint(uint64(m.Count), 10))
+		w.WriteByte('/')
+		w.WriteString(strconv.FormatUint(uint64(m.Count), 10))
 	}
-	buf.WriteByte(' ')
-	buf.WriteString(m.Proto)
+	w.WriteByte(' ')
+	w.WriteString(m.Proto)
 	for i := range m.Attrs {
-		buf.WriteByte(' ')
-		buf.WriteString(m.Attrs[i])
+		w.WriteByte(' ')
+		w.WriteString(m.Attrs[i])
 	}
-	writeEOL(buf)
+	writeEOL(w)
 	if m.Info != "" {
-		writePrefix(buf, 'i')
-		writeLine(buf, m.Info)
+		writePrefix(w, 'i')
+		writeLine(w, m.Info)
 	}
-	writeConnInfo(buf, m.ConnInfo, true)
-	writeBandwidths(buf, m.Bandwidth)
-	writeAttributes(buf, m.Attributes)
+	writeConnInfo(w, m.ConnInfo, true)
+	writeBandwidths(w, m.Bandwidth)
+	writeAttributes(w, m.Attributes)
 }
 
-func writeConnInfo(buf *bytes.Buffer, conn ConnInfo, prefix bool) {
+func writeConnInfo(w *bufio.Writer, conn ConnInfo, prefix bool) {
 	if conn.IsZero() {
 		return
 	}
 	if prefix {
-		writePrefix(buf, 'c')
+		writePrefix(w, 'c')
 	}
-	buf.WriteString(conn.NetType)
-	buf.WriteByte(' ')
-	buf.WriteString(conn.AddrType)
-	buf.WriteByte(' ')
-	buf.WriteString(conn.Addr)
+	w.WriteString(conn.NetType)
+	w.WriteByte(' ')
+	w.WriteString(conn.AddrType)
+	w.WriteByte(' ')
+	w.WriteString(conn.Addr)
 	if conn.TTL > 0 {
-		buf.WriteByte('/')
-		buf.WriteString(strconv.FormatInt(conn.TTL, 10))
+		w.WriteByte('/')
+		w.WriteString(strconv.FormatInt(conn.TTL, 10))
 	}
-	writeEOL(buf)
+	writeEOL(w)
 }
 
-func writeBandwidths(buf *bytes.Buffer, bws []Bandwidth) {
+func writeBandwidths(w *bufio.Writer, bws []Bandwidth) {
 	for i := range bws {
-		writePrefix(buf, 'b')
-		buf.WriteString(bws[i].Type)
-		buf.WriteByte(':')
-		buf.WriteString(strconv.FormatInt(bws[i].Value, 10))
-		writeEOL(buf)
+		writePrefix(w, 'b')
+		w.WriteString(bws[i].Type)
+		w.WriteByte(':')
+		w.WriteString(strconv.FormatInt(bws[i].Value, 10))
+		writeEOL(w)
 	}
 }
 
-func writeAttributes(buf *bytes.Buffer, attrs []Attribute) {
+func writeAttributes(w *bufio.Writer, attrs []Attribute) {
 	for i := range attrs {
-		writePrefix(buf, 'a')
-		buf.WriteString(attrs[i].Name)
-		buf.WriteByte(':')
-		buf.WriteString(attrs[i].Value)
-		writeEOL(buf)
+		writePrefix(w, 'a')
+		w.WriteString(attrs[i].Name)
+		w.WriteByte(':')
+		w.WriteString(attrs[i].Value)
+		writeEOL(w)
 	}
 }
 
-func writePrefix(buf *bytes.Buffer, prefix byte) {
-	buf.WriteByte(prefix)
-	buf.WriteByte('=')
+func writePrefix(w *bufio.Writer, prefix byte) {
+	w.WriteByte(prefix)
+	w.WriteByte('=')
 }
 
-func writeLine(buf *bytes.Buffer, line string) {
-	io.WriteString(buf, line)
-	writeEOL(buf)
+func writeLine(w *bufio.Writer, line string) {
+	w.WriteString(line)
+	writeEOL(w)
 }
 
-func writeEOL(buf *bytes.Buffer) {
-	buf.WriteByte('\r')
-	buf.WriteByte('\n')
+func writeEOL(w *bufio.Writer) {
+	w.WriteByte('\r')
+	w.WriteByte('\n')
 }
